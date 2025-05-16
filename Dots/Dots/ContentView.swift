@@ -111,7 +111,8 @@ class DailyQuestionsViewModel: ObservableObject {
             case .slider:
                 if answers[q.id]?.sliderValue == nil { return false }
             case .freeText:
-                if (answers[q.id]?.freeTextValue ?? "").isEmpty { return false }
+                let a = answers[q.id]
+                if a?.yesNoValue == nil { return false }
             }
         }
         return true
@@ -173,10 +174,16 @@ struct ContentView: View {
                                     set: { vm.answers[question.id]?.sliderValue = $0 }
                                 ))
                             case .freeText:
-                                FreeTextQuestionView(answer: Binding(
-                                    get: { vm.answers[question.id]?.freeTextValue ?? "" },
-                                    set: { vm.setFreeText($0, for: question) }
-                                ))
+                                FreeTextQuestionView(
+                                    yesNo: Binding(
+                                        get: { vm.answers[question.id]?.yesNoValue },
+                                        set: { vm.setYesNo($0 ?? false, for: question) }
+                                    ),
+                                    answer: Binding(
+                                        get: { vm.answers[question.id]?.freeTextValue ?? "" },
+                                        set: { vm.setFreeText($0, for: question) }
+                                    )
+                                )
                             }
                         }
                     }
@@ -363,14 +370,18 @@ struct FreeTextSummaryList: View {
     let question: Question
     let answers: [Answer]
     var body: some View {
-        if answers.isEmpty {
+        let filtered = answers.filter { $0.yesNoValue == true }
+        if filtered.isEmpty {
             Text("No responses yet.")
                 .italic()
         } else {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(answers) { answer in
+                ForEach(filtered) { answer in
                     if let text = answer.freeTextValue, !text.isEmpty {
                         Text("• \(text)")
+                    } else {
+                        Text("• (No details provided)")
+                            .italic()
                     }
                 }
             }
@@ -408,9 +419,25 @@ struct SliderQuestionView: View {
 }
 
 struct FreeTextQuestionView: View {
+    @Binding var yesNo: Bool?
     @Binding var answer: String
     var body: some View {
-        TextField("Enter your answer", text: $answer)
+        VStack(alignment: .leading) {
+            HStack {
+                Button(action: { yesNo = true }) {
+                    Label("Yes", systemImage: yesNo == true ? "checkmark.circle.fill" : "circle")
+                }
+                .buttonStyle(.bordered)
+                Button(action: { yesNo = false }) {
+                    Label("No", systemImage: yesNo == false ? "xmark.circle.fill" : "circle")
+                }
+                .buttonStyle(.bordered)
+            }
+            if yesNo == true {
+                TextField("Please describe...", text: $answer)
+                    .textFieldStyle(.roundedBorder)
+            }
+        }
     }
 }
 
