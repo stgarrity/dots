@@ -38,7 +38,11 @@ struct Answer: Identifiable, Codable {
 // MARK: - ViewModel
 
 class DailyQuestionsViewModel: ObservableObject {
-    @Published var questions: [Question] = []
+    @Published var questions: [Question] = [] {
+        didSet {
+            saveQuestions()
+        }
+    }
     @Published var answers: [UUID: Answer] = [:] // keyed by questionID
 
     let today = Calendar.current.startOfDay(for: Date())
@@ -49,7 +53,13 @@ class DailyQuestionsViewModel: ObservableObject {
     }
 
     func loadQuestions() {
-        // For MVP, use hardcoded questions
+        if let data = UserDefaults.standard.data(forKey: "questions") {
+            if let decoded = try? JSONDecoder().decode([Question].self, from: data) {
+                questions = decoded
+                return
+            }
+        }
+        // If not found, use default questions
         questions = [
             Question(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, text: "Did I make meaningful progress on something important today?", type: .yesNo),
             Question(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, text: "Was I able to finish work without guilt or mental spillover?", type: .yesNo),
@@ -57,17 +67,22 @@ class DailyQuestionsViewModel: ObservableObject {
             Question(id: UUID(uuidString: "00000000-0000-0000-0000-000000000004")!, text: "Did I feel present during non-work activities today?", type: .yesNo),
             Question(id: UUID(uuidString: "00000000-0000-0000-0000-000000000005")!, text: "Do I feel like I'm pacing myself in a sustainable way?", type: .yesNo)
         ]
+        saveQuestions()
+    }
+
+    func saveQuestions() {
+        if let data = try? JSONEncoder().encode(questions) {
+            UserDefaults.standard.set(data, forKey: "questions")
+        }
     }
 
     func loadTodayAnswers() {
-        // Load from UserDefaults for MVP
         if let data = UserDefaults.standard.data(forKey: "answers_\(today)") {
             if let decoded = try? JSONDecoder().decode([UUID: Answer].self, from: data) {
                 answers = decoded
                 return
             }
         }
-        // If not found, initialize empty answers
         answers = [:]
         for q in questions {
             answers[q.id] = Answer(id: UUID(), questionID: q.id, date: today, yesNoValue: nil, sliderValue: nil, freeTextValue: nil)
@@ -100,6 +115,36 @@ class DailyQuestionsViewModel: ObservableObject {
             }
         }
         return true
+    }
+
+    // MARK: - Question Editing
+    func addQuestion(text: String, type: QuestionType) {
+        let newQ = Question(id: UUID(), text: text, type: type)
+        questions.append(newQ)
+        clearTodayAnswers()
+    }
+
+    func updateQuestion(_ question: Question, text: String, type: QuestionType) {
+        if let idx = questions.firstIndex(where: { $0.id == question.id }) {
+            questions[idx].text = text
+            questions[idx].type = type
+            clearTodayAnswers()
+        }
+    }
+
+    func deleteQuestion(at offsets: IndexSet) {
+        questions.remove(atOffsets: offsets)
+        clearTodayAnswers()
+    }
+
+    func moveQuestion(from source: IndexSet, to destination: Int) {
+        questions.move(fromOffsets: source, toOffset: destination)
+        clearTodayAnswers()
+    }
+
+    func clearTodayAnswers() {
+        UserDefaults.standard.removeObject(forKey: "answers_\(today)")
+        loadTodayAnswers()
     }
 }
 
@@ -156,6 +201,12 @@ struct ContentView: View {
                     Label("Summary", systemImage: "chart.bar")
                 }
                 .tag(1)
+
+            QuestionsEditorView(vm: vm)
+                .tabItem {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .tag(2)
         }
     }
 }
@@ -360,6 +411,96 @@ struct FreeTextQuestionView: View {
     @Binding var answer: String
     var body: some View {
         TextField("Enter your answer", text: $answer)
+    }
+}
+
+// MARK: - Questions Editor View
+
+struct QuestionsEditorView: View {
+    @ObservedObject var vm: DailyQuestionsViewModel
+    @State private var newText: String = ""
+    @State private var newType: QuestionType = .yesNo
+    @State private var editingQuestion: Question? = nil
+    @State private var editingText: String = ""
+    @State private var editingType: QuestionType = .yesNo
+
+    var body: some View {
+        NavigationView {
+            VStack {
+                List {
+                    ForEach(vm.questions) { question in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(question.text)
+                                Text(question.type.rawValue.capitalized)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button("Edit") {
+                                editingQuestion = question
+                                editingText = question.text
+                                editingType = question.type
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .onDelete(perform: vm.deleteQuestion)
+                    .onMove(perform: vm.moveQuestion)
+                }
+                .environment(\ .editMode, .constant(.active))
+                .navigationTitle("Edit Questions")
+                .toolbar {
+                    EditButton()
+                }
+                Divider()
+                VStack(spacing: 8) {
+                    Text("Add New Question")
+                        .font(.headline)
+                    TextField("Question text", text: $newText)
+                        .textFieldStyle(.roundedBorder)
+                    Picker("Type", selection: $newType) {
+                        ForEach(QuestionType.allCases) { type in
+                            Text(type.rawValue.capitalized).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Button("Add") {
+                        guard !newText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                        vm.addQuestion(text: newText, type: newType)
+                        newText = ""
+                        newType = .yesNo
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+            }
+            .sheet(item: $editingQuestion) { question in
+                NavigationView {
+                    Form {
+                        Section(header: Text("Edit Question")) {
+                            TextField("Question text", text: $editingText)
+                            Picker("Type", selection: $editingType) {
+                                ForEach(QuestionType.allCases) { type in
+                                    Text(type.rawValue.capitalized).tag(type)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        Button("Save") {
+                            vm.updateQuestion(question, text: editingText, type: editingType)
+                            editingQuestion = nil
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button("Cancel", role: .cancel) {
+                            editingQuestion = nil
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .navigationTitle("Edit Question")
+                }
+            }
+        }
     }
 }
 
