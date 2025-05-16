@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if canImport(Charts)
+import Charts
+#endif
 
 // MARK: - Data Models
 
@@ -105,41 +108,220 @@ class DailyQuestionsViewModel: ObservableObject {
 struct ContentView: View {
     @StateObject private var vm = DailyQuestionsViewModel()
     @State private var showSaved = false
+    @State private var selectedTab = 0
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            NavigationView {
+                Form {
+                    ForEach(vm.questions) { question in
+                        Section(header: Text(question.text)) {
+                            switch question.type {
+                            case .yesNo:
+                                YesNoQuestionView(answer: Binding(
+                                    get: { vm.answers[question.id]?.yesNoValue },
+                                    set: { vm.setYesNo($0 ?? false, for: question) }
+                                ))
+                            case .slider:
+                                SliderQuestionView(answer: Binding(
+                                    get: { vm.answers[question.id]?.sliderValue },
+                                    set: { vm.answers[question.id]?.sliderValue = $0 }
+                                ))
+                            case .freeText:
+                                FreeTextQuestionView(answer: Binding(
+                                    get: { vm.answers[question.id]?.freeTextValue ?? "" },
+                                    set: { vm.setFreeText($0, for: question) }
+                                ))
+                            }
+                        }
+                    }
+                    Button("Save") {
+                        vm.saveAnswers()
+                        showSaved = true
+                    }
+                    .disabled(!vm.isComplete())
+                }
+                .navigationTitle("Today's Questions")
+                .alert(isPresented: $showSaved) {
+                    Alert(title: Text("Saved!"), message: Text("Your answers have been saved."), dismissButton: .default(Text("OK")))
+                }
+            }
+            .tabItem {
+                Label("Questions", systemImage: "list.bullet")
+            }
+            .tag(0)
+
+            SummaryView(questions: vm.questions)
+                .tabItem {
+                    Label("Summary", systemImage: "chart.bar")
+                }
+                .tag(1)
+        }
+    }
+}
+
+// MARK: - Summary View
+
+struct SummaryView: View {
+    let questions: [Question]
+    @State private var range: SummaryRange = .week
+    @State private var historicalAnswers: [Date: [UUID: Answer]] = [:]
 
     var body: some View {
         NavigationView {
-            Form {
-                ForEach(vm.questions) { question in
-                    Section(header: Text(question.text)) {
-                        switch question.type {
-                        case .yesNo:
-                            YesNoQuestionView(answer: Binding(
-                                get: { vm.answers[question.id]?.yesNoValue },
-                                set: { vm.setYesNo($0 ?? false, for: question) }
-                            ))
-                        case .slider:
-                            // Not used in initial set, but placeholder for future
-                            SliderQuestionView(answer: Binding(
-                                get: { vm.answers[question.id]?.sliderValue },
-                                set: { vm.answers[question.id]?.sliderValue = $0 }
-                            ))
-                        case .freeText:
-                            FreeTextQuestionView(answer: Binding(
-                                get: { vm.answers[question.id]?.freeTextValue ?? "" },
-                                set: { vm.setFreeText($0, for: question) }
-                            ))
-                        }
+            VStack {
+                Picker("Range", selection: $range) {
+                    ForEach(SummaryRange.allCases) { r in
+                        Text(r.title).tag(r)
                     }
                 }
-                Button("Save") {
-                    vm.saveAnswers()
-                    showSaved = true
+                .pickerStyle(.segmented)
+                .padding()
+
+                ScrollView {
+                    ForEach(questions) { question in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(question.text)
+                                .font(.headline)
+                            switch question.type {
+                            case .yesNo:
+                                YesNoSummaryChart(question: question, answers: answersFor(question: question))
+                            case .slider:
+                                SliderSummaryChart(question: question, answers: answersFor(question: question))
+                            case .freeText:
+                                FreeTextSummaryList(question: question, answers: answersFor(question: question))
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        Divider()
+                    }
                 }
-                .disabled(!vm.isComplete())
+                .padding(.horizontal)
             }
-            .navigationTitle("Today's Questions")
-            .alert(isPresented: $showSaved) {
-                Alert(title: Text("Saved!"), message: Text("Your answers have been saved."), dismissButton: .default(Text("OK")))
+            .navigationTitle("Summary")
+            .onAppear {
+                loadHistoricalAnswers()
+            }
+            .onChange(of: range) { _ in
+                loadHistoricalAnswers()
+            }
+        }
+    }
+
+    func answersFor(question: Question) -> [Answer] {
+        historicalAnswers.values.compactMap { $0[question.id] }
+    }
+
+    func loadHistoricalAnswers() {
+        // Load answers for the selected range from UserDefaults
+        var result: [Date: [UUID: Answer]] = [:]
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let dates: [Date]
+        switch range {
+        case .today:
+            dates = [today]
+        case .week:
+            dates = (0..<7).map { calendar.date(byAdding: .day, value: -$0, to: today)! }
+        case .month:
+            dates = (0..<30).map { calendar.date(byAdding: .day, value: -$0, to: today)! }
+        }
+        for date in dates {
+            if let data = UserDefaults.standard.data(forKey: "answers_\(date)") {
+                if let decoded = try? JSONDecoder().decode([UUID: Answer].self, from: data) {
+                    result[date] = decoded
+                }
+            }
+        }
+        historicalAnswers = result
+    }
+}
+
+enum SummaryRange: String, CaseIterable, Identifiable {
+    case today, week, month
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .today: return "Today"
+        case .week: return "Week"
+        case .month: return "Month"
+        }
+    }
+}
+
+// MARK: - Summary Chart Views
+
+struct YesNoSummaryChart: View {
+    let question: Question
+    let answers: [Answer]
+    var yesCount: Int { answers.filter { $0.yesNoValue == true }.count }
+    var noCount: Int { answers.filter { $0.yesNoValue == false }.count }
+    var total: Int { yesCount + noCount }
+    var yesPercent: Double { total > 0 ? Double(yesCount) / Double(total) : 0 }
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            HStack {
+                Text("Yes: \(yesCount)")
+                Text("No: \(noCount)")
+            }
+            #if canImport(Charts)
+            Chart {
+                BarMark(
+                    x: .value("Answer", "Yes"),
+                    y: .value("Count", yesCount)
+                )
+                BarMark(
+                    x: .value("Answer", "No"),
+                    y: .value("Count", noCount)
+                )
+            }
+            .frame(height: 120)
+            #else
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color.green)
+                        .frame(width: geo.size.width * CGFloat(yesPercent), height: 20)
+                    Rectangle()
+                        .fill(Color.red)
+                        .frame(width: geo.size.width * CGFloat(1 - yesPercent), height: 20)
+                }
+            }
+            .frame(height: 20)
+            #endif
+        }
+    }
+}
+
+struct SliderSummaryChart: View {
+    let question: Question
+    let answers: [Answer]
+    var values: [Double] { answers.compactMap { $0.sliderValue } }
+    var avg: Double { values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count) }
+    var body: some View {
+        if values.isEmpty {
+            Text("No data yet.")
+        } else {
+            Text("Average: \(String(format: "%.1f", avg))")
+        }
+    }
+}
+
+struct FreeTextSummaryList: View {
+    let question: Question
+    let answers: [Answer]
+    var body: some View {
+        if answers.isEmpty {
+            Text("No responses yet.")
+                .italic()
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(answers) { answer in
+                    if let text = answer.freeTextValue, !text.isEmpty {
+                        Text("• \(text)")
+                    }
+                }
             }
         }
     }
