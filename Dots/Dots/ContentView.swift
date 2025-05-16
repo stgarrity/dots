@@ -18,6 +18,13 @@ enum QuestionType: String, Codable, CaseIterable, Identifiable {
     case freeText
 
     var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .yesNo: return "Yes/No"
+        case .slider: return "Slider"
+        case .freeText: return "Free Text"
+        }
+    }
 }
 
 struct Question: Identifiable, Codable {
@@ -190,6 +197,7 @@ struct ContentView: View {
                     Button("Save") {
                         vm.saveAnswers()
                         showSaved = true
+                        selectedTab = 1 // Switch to Summary tab
                     }
                     .disabled(!vm.isComplete())
                 }
@@ -214,6 +222,12 @@ struct ContentView: View {
                     Label("Edit", systemImage: "pencil")
                 }
                 .tag(2)
+        }
+        .onAppear {
+            // If today's answers are already complete, show the Summary tab
+            if vm.isComplete() {
+                selectedTab = 1
+            }
         }
     }
 }
@@ -459,7 +473,7 @@ struct QuestionsEditorView: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(question.text)
-                                Text(question.type.rawValue.capitalized)
+                                Text(question.type.displayName)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -488,7 +502,7 @@ struct QuestionsEditorView: View {
                         .textFieldStyle(.roundedBorder)
                     Picker("Type", selection: $newType) {
                         ForEach(QuestionType.allCases) { type in
-                            Text(type.rawValue.capitalized).tag(type)
+                            Text(type.displayName).tag(type)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -509,7 +523,7 @@ struct QuestionsEditorView: View {
                             TextField("Question text", text: $editingText)
                             Picker("Type", selection: $editingType) {
                                 ForEach(QuestionType.allCases) { type in
-                                    Text(type.rawValue.capitalized).tag(type)
+                                    Text(type.displayName).tag(type)
                                 }
                             }
                             .pickerStyle(.segmented)
