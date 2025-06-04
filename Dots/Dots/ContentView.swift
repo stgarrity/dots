@@ -51,14 +51,26 @@ class DailyQuestionsViewModel: ObservableObject {
         }
     }
     @Published var answers: [UUID: Answer] = [:] // keyed by questionID
+    @Published var currentDay: Date = Calendar.current.startOfDay(for: Date())
+
+    private var lastLoadedDay: Date = Calendar.current.startOfDay(for: Date())
+
+    init() {
+        loadQuestions()
+        loadTodayAnswers()
+    }
 
     var today: Date {
         Calendar.current.startOfDay(for: Date())
     }
 
-    init() {
-        loadQuestions()
-        loadTodayAnswers()
+    func checkForDayChangeAndReload() {
+        let newDay = today
+        if newDay != lastLoadedDay {
+            lastLoadedDay = newDay
+            currentDay = newDay
+            loadTodayAnswers()
+        }
     }
 
     func loadQuestions() {
@@ -86,7 +98,8 @@ class DailyQuestionsViewModel: ObservableObject {
     }
 
     func loadTodayAnswers() {
-        if let data = UserDefaults.standard.data(forKey: "answers_\(today)") {
+        let key = "answers_\(today)"
+        if let data = UserDefaults.standard.data(forKey: key) {
             if let decoded = try? JSONDecoder().decode([UUID: Answer].self, from: data) {
                 answers = decoded
                 return
@@ -164,6 +177,7 @@ struct ContentView: View {
     @StateObject private var vm = DailyQuestionsViewModel()
     @State private var showSaved = false
     @State private var selectedTab = 0
+    @State private var lastDay: Date = Calendar.current.startOfDay(for: Date())
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -226,9 +240,18 @@ struct ContentView: View {
                 .tag(2)
         }
         .onAppear {
-            // If today's answers are already complete, show the Summary tab
-            if vm.isComplete() {
+            vm.checkForDayChangeAndReload()
+            if lastDay != vm.today {
+                selectedTab = 0 // Show Questions tab on new day
+                lastDay = vm.today
+            } else if vm.isComplete() {
                 selectedTab = 1
+            }
+        }
+        .onReceive(vm.$currentDay) { newDay in
+            if lastDay != newDay {
+                selectedTab = 0 // Show Questions tab on new day
+                lastDay = newDay
             }
         }
     }
