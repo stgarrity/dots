@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 #if canImport(Charts)
 import Charts
 #endif
@@ -171,6 +172,37 @@ class DailyQuestionsViewModel: ObservableObject {
     }
 }
 
+// MARK: - Notification Manager
+
+class NotificationManager {
+    static let shared = NotificationManager()
+
+    func requestAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            // Handle errors or denied permissions if needed
+        }
+    }
+
+    func scheduleDailyNotification() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["dailyDotsReminder"])
+
+        var dateComponents = DateComponents()
+        dateComponents.hour = 22 // 10:00 PM
+        dateComponents.minute = 0
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+
+        let content = UNMutableNotificationContent()
+        content.title = "Dots Reminder"
+        content.body = "Don't forget to answer your daily questions!"
+        content.sound = .default
+
+        let request = UNNotificationRequest(identifier: "dailyDotsReminder", content: content, trigger: trigger)
+        center.add(request)
+    }
+}
+
 // MARK: - Daily Questions View
 
 struct ContentView: View {
@@ -240,6 +272,8 @@ struct ContentView: View {
                 .tag(2)
         }
         .onAppear {
+            NotificationManager.shared.requestAuthorization()
+            NotificationManager.shared.scheduleDailyNotification()
             vm.checkForDayChangeAndReload()
             if lastDay != vm.today {
                 selectedTab = 0 // Show Questions tab on new day
