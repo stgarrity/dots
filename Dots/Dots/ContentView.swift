@@ -183,21 +183,37 @@ class NotificationManager {
         }
     }
 
+    func getNotificationTime() -> Date {
+        if let timeData = UserDefaults.standard.data(forKey: "notificationTime"),
+           let time = try? JSONDecoder().decode(Date.self, from: timeData) {
+            return time
+        }
+        // Default to 10:00 PM today
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        components.hour = 22
+        components.minute = 0
+        return Calendar.current.date(from: components) ?? Date()
+    }
+
+    func setNotificationTime(_ date: Date) {
+        if let data = try? JSONEncoder().encode(date) {
+            UserDefaults.standard.set(data, forKey: "notificationTime")
+        }
+    }
+
     func scheduleDailyNotification() {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: ["dailyDotsReminder"])
-
+        let notifDate = getNotificationTime()
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: notifDate)
         var dateComponents = DateComponents()
-        dateComponents.hour = 22 // 10:00 PM
-        dateComponents.minute = 0
-
+        dateComponents.hour = comps.hour
+        dateComponents.minute = comps.minute
         let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
-
         let content = UNMutableNotificationContent()
         content.title = "Dots Reminder"
         content.body = "Don't forget to answer your daily questions!"
         content.sound = .default
-
         let request = UNNotificationRequest(identifier: "dailyDotsReminder", content: content, trigger: trigger)
         center.add(request)
     }
@@ -523,6 +539,7 @@ struct QuestionsEditorView: View {
     @State private var editingQuestion: Question? = nil
     @State private var editingText: String = ""
     @State private var editingType: QuestionType = .yesNo
+    @State private var notificationTime: Date = NotificationManager.shared.getNotificationTime()
 
     var body: some View {
         NavigationView {
@@ -547,6 +564,19 @@ struct QuestionsEditorView: View {
                     }
                     .onDelete(perform: vm.deleteQuestion)
                     .onMove(perform: vm.moveQuestion)
+                    // Notification time picker section
+                    Section(header: Text("Notification Time")) {
+                        DatePicker(
+                            "Daily Reminder Time",
+                            selection: $notificationTime,
+                            displayedComponents: .hourAndMinute
+                        )
+                        .datePickerStyle(.wheel)
+                        .onChange(of: notificationTime) { newValue in
+                            NotificationManager.shared.setNotificationTime(newValue)
+                            NotificationManager.shared.scheduleDailyNotification()
+                        }
+                    }
                 }
                 .environment(\ .editMode, .constant(.active))
                 .navigationTitle("Edit Questions")
