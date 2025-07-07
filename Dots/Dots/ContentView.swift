@@ -56,6 +56,7 @@ class DailyQuestionsViewModel: ObservableObject {
 
     init() {
         loadQuestions()
+        checkForNewDay()
         loadTodayAnswers()
     }
 
@@ -80,6 +81,27 @@ class DailyQuestionsViewModel: ObservableObject {
     func saveQuestions() {
         if let data = try? JSONEncoder().encode(questions) {
             UserDefaults.standard.set(data, forKey: "questions")
+        }
+    }
+
+    func checkForNewDay() {
+        let lastOpenedDateKey = "lastOpenedDate"
+        
+        // Get the last date the app was opened
+        if let lastOpenedData = UserDefaults.standard.data(forKey: lastOpenedDateKey),
+           let lastOpenedDate = try? JSONDecoder().decode(Date.self, from: lastOpenedData) {
+            
+            let lastOpenedDay = Calendar.current.startOfDay(for: lastOpenedDate)
+            
+            // If today is different from the last opened day, clear today's answers
+            if today != lastOpenedDay {
+                clearTodayAnswers()
+            }
+        }
+        
+        // Update the last opened date to today
+        if let todayData = try? JSONEncoder().encode(today) {
+            UserDefaults.standard.set(todayData, forKey: lastOpenedDateKey)
         }
     }
 
