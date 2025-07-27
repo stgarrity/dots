@@ -52,7 +52,9 @@ class DailyQuestionsViewModel: ObservableObject {
     }
     @Published var answers: [UUID: Answer] = [:] // keyed by questionID
 
-    let today = Calendar.current.startOfDay(for: Date())
+    var today: Date {
+        Calendar.current.startOfDay(for: Date())
+    }
 
     init() {
         loadQuestions()
