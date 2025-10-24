@@ -11,6 +11,18 @@ import UserNotifications
 import Charts
 #endif
 
+// MARK: - Color Scheme
+
+extension Color {
+    static let primaryApp = Color(red: 0.2, green: 0.6, blue: 0.9) // Soft blue
+    static let secondaryApp = Color(red: 0.9, green: 0.4, blue: 0.2) // Coral
+    static let accentApp = Color(red: 0.3, green: 0.8, blue: 0.6) // Mint green
+    static let backgroundApp = Color(red: 0.98, green: 0.98, blue: 1.0) // Very light blue tint
+    static let cardBackground = Color.white
+    static let textPrimary = Color(red: 0.1, green: 0.1, blue: 0.1)
+    static let textSecondary = Color(red: 0.4, green: 0.4, blue: 0.4)
+}
+
 // MARK: - Data Models
 
 enum QuestionType: String, Codable, CaseIterable, Identifiable {
@@ -230,40 +242,82 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationView {
-                Form {
-                    ForEach(vm.questions) { question in
-                        Section(header: Text(question.text)) {
-                            switch question.type {
-                            case .yesNo:
-                                YesNoQuestionView(answer: Binding(
-                                    get: { vm.answers[question.id]?.yesNoValue },
-                                    set: { vm.setYesNo($0 ?? false, for: question) }
-                                ))
-                            case .slider:
-                                SliderQuestionView(answer: Binding(
-                                    get: { vm.answers[question.id]?.sliderValue },
-                                    set: { vm.answers[question.id]?.sliderValue = $0 }
-                                ))
-                            case .freeText:
-                                FreeTextQuestionView(
-                                    yesNo: Binding(
-                                        get: { vm.answers[question.id]?.yesNoValue },
-                                        set: { vm.setYesNo($0 ?? false, for: question) }
-                                    ),
-                                    answer: Binding(
-                                        get: { vm.answers[question.id]?.freeTextValue ?? "" },
-                                        set: { vm.setFreeText($0, for: question) }
+                VStack(spacing: 0) {
+                    // Header with gradient background
+                    VStack(spacing: 16) {
+                        // App logo/icon area
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [Color.primaryApp, Color.accentApp]),
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
                                     )
                                 )
+                                .frame(width: 80, height: 80)
+                                .shadow(color: Color.primaryApp.opacity(0.3), radius: 8, x: 0, y: 4)
+
+                            Image(systemName: "circle.grid.3x3.fill")
+                                .font(.system(size: 32, weight: .medium))
+                                .foregroundColor(.white)
+                        }
+
+                        Text("Daily Dots")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.textPrimary)
+
+                        Text("Track your daily progress")
+                            .font(.subheadline)
+                            .foregroundColor(.textSecondary)
+                    }
+                    .padding(.vertical, 24)
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.backgroundApp, Color.white]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
+                    Form {
+                        ForEach(vm.questions) { question in
+                            Section(header: Text(question.text)) {
+                                switch question.type {
+                                case .yesNo:
+                                    YesNoQuestionView(answer: Binding(
+                                        get: { vm.answers[question.id]?.yesNoValue },
+                                        set: { vm.setYesNo($0 ?? false, for: question) }
+                                    ))
+                                case .slider:
+                                    SliderQuestionView(answer: Binding(
+                                        get: { vm.answers[question.id]?.sliderValue },
+                                        set: { vm.answers[question.id]?.sliderValue = $0 }
+                                    ))
+                                case .freeText:
+                                    FreeTextQuestionView(
+                                        yesNo: Binding(
+                                            get: { vm.answers[question.id]?.yesNoValue },
+                                            set: { vm.setYesNo($0 ?? false, for: question) }
+                                        ),
+                                        answer: Binding(
+                                            get: { vm.answers[question.id]?.freeTextValue ?? "" },
+                                            set: { vm.setFreeText($0, for: question) }
+                                        )
+                                    )
+                                }
                             }
                         }
+                        Button("Save") {
+                            vm.saveAnswers()
+                            showSaved = true
+                            selectedTab = 1 // Switch to Summary tab
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.primaryApp)
+                        .disabled(!vm.isComplete())
                     }
-                    Button("Save") {
-                        vm.saveAnswers()
-                        showSaved = true
-                        selectedTab = 1 // Switch to Summary tab
-                    }
-                    .disabled(!vm.isComplete())
                 }
                 .navigationTitle("Today's Questions")
                 .alert(isPresented: $showSaved) {
@@ -287,6 +341,7 @@ struct ContentView: View {
                 }
                 .tag(2)
         }
+        .background(Color.backgroundApp)
         .onAppear {
             NotificationManager.shared.requestAuthorization()
             NotificationManager.shared.scheduleDailyNotification()
@@ -418,20 +473,22 @@ struct YesNoSummaryChart: View {
                     x: .value("Answer", "Yes"),
                     y: .value("Count", yesCount)
                 )
+                .foregroundStyle(Color.accentApp)
                 BarMark(
                     x: .value("Answer", "No"),
                     y: .value("Count", noCount)
                 )
+                .foregroundStyle(Color.secondaryApp)
             }
             .frame(height: 120)
             #else
             GeometryReader { geo in
                 HStack(spacing: 0) {
                     Rectangle()
-                        .fill(Color.green)
+                        .fill(Color.accentApp)
                         .frame(width: geo.size.width * CGFloat(yesPercent), height: 20)
                     Rectangle()
-                        .fill(Color.red)
+                        .fill(Color.secondaryApp)
                         .frame(width: geo.size.width * CGFloat(1 - yesPercent), height: 20)
                 }
             }
@@ -483,15 +540,46 @@ struct FreeTextSummaryList: View {
 struct YesNoQuestionView: View {
     @Binding var answer: Bool?
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             Button(action: { answer = true }) {
-                Label("Yes", systemImage: answer == true ? "checkmark.circle.fill" : "circle")
+                HStack {
+                    Image(systemName: answer == true ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(answer == true ? .accentApp : .textSecondary)
+                    Text("Yes")
+                        .fontWeight(answer == true ? .semibold : .regular)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(answer == true ? Color.accentApp.opacity(0.1) : Color.clear)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(answer == true ? Color.accentApp : Color.textSecondary.opacity(0.3), lineWidth: 1)
+                        )
+                )
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
+
             Button(action: { answer = false }) {
-                Label("No", systemImage: answer == false ? "xmark.circle.fill" : "circle")
+                HStack {
+                    Image(systemName: answer == false ? "xmark.circle.fill" : "circle")
+                        .foregroundColor(answer == false ? .secondaryApp : .textSecondary)
+                    Text("No")
+                        .fontWeight(answer == false ? .semibold : .regular)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(answer == false ? Color.secondaryApp.opacity(0.1) : Color.clear)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(answer == false ? Color.secondaryApp : Color.textSecondary.opacity(0.3), lineWidth: 1)
+                        )
+                )
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
         }
     }
 }
@@ -499,11 +587,23 @@ struct YesNoQuestionView: View {
 struct SliderQuestionView: View {
     @Binding var answer: Double?
     var body: some View {
-        Slider(value: Binding(
-            get: { answer ?? 5 },
-            set: { answer = $0 }
-        ), in: 1...10, step: 1)
-        Text("\(Int(answer ?? 5))")
+        VStack(spacing: 8) {
+            Slider(value: Binding(
+                get: { answer ?? 5 },
+                set: { answer = $0 }
+            ), in: 1...10, step: 1)
+            .tint(Color.primaryApp)
+
+            Text("\(Int(answer ?? 5))")
+                .font(.headline)
+                .foregroundColor(.primaryApp)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primaryApp.opacity(0.1))
+                )
+        }
     }
 }
 
@@ -511,20 +611,56 @@ struct FreeTextQuestionView: View {
     @Binding var yesNo: Bool?
     @Binding var answer: String
     var body: some View {
-        VStack(alignment: .leading) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
                 Button(action: { yesNo = true }) {
-                    Label("Yes", systemImage: yesNo == true ? "checkmark.circle.fill" : "circle")
+                    HStack {
+                        Image(systemName: yesNo == true ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(yesNo == true ? .accentApp : .textSecondary)
+                        Text("Yes")
+                            .fontWeight(yesNo == true ? .semibold : .regular)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(yesNo == true ? Color.accentApp.opacity(0.1) : Color.clear)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(yesNo == true ? Color.accentApp : Color.textSecondary.opacity(0.3), lineWidth: 1)
+                            )
+                    )
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
+
                 Button(action: { yesNo = false }) {
-                    Label("No", systemImage: yesNo == false ? "xmark.circle.fill" : "circle")
+                    HStack {
+                        Image(systemName: yesNo == false ? "xmark.circle.fill" : "circle")
+                            .foregroundColor(yesNo == false ? .secondaryApp : .textSecondary)
+                        Text("No")
+                            .fontWeight(yesNo == false ? .semibold : .regular)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(yesNo == false ? Color.secondaryApp.opacity(0.1) : Color.clear)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(yesNo == false ? Color.secondaryApp : Color.textSecondary.opacity(0.3), lineWidth: 1)
+                            )
+                    )
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
             }
+
             if yesNo == true {
                 TextField("Please describe...", text: $answer)
                     .textFieldStyle(.roundedBorder)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.primaryApp.opacity(0.3), lineWidth: 1)
+                    )
             }
         }
     }
@@ -602,6 +738,7 @@ struct QuestionsEditorView: View {
                         newType = .yesNo
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(Color.primaryApp)
                 }
                 .padding()
             }
@@ -622,6 +759,7 @@ struct QuestionsEditorView: View {
                             editingQuestion = nil
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(Color.primaryApp)
                         Button("Cancel", role: .cancel) {
                             editingQuestion = nil
                         }
