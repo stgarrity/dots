@@ -271,6 +271,11 @@ struct ContentView: View {
                         Text("Track your daily progress")
                             .font(.subheadline)
                             .foregroundColor(.textSecondary)
+
+                        Text(vm.currentDay, style: .date)
+                            .font(.caption)
+                            .foregroundColor(.textSecondary)
+                            .padding(.top, 4)
                     }
                     .padding(.vertical, 24)
                     .background(
