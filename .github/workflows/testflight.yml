@@ -1,0 +1,144 @@
+name: Deploy to TestFlight
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.4'
+
+      - name: Generate Build Number
+        id: build_number
+        run: |
+          BUILD_NUMBER=$(date -u +"%Y%m%d.%H%M")
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "COMMIT_SHORT=$COMMIT_SHORT" >> $GITHUB_ENV
+          echo "Build number: $BUILD_NUMBER (commit: $COMMIT_SHORT)"
+
+      - name: Install Apple Certificate
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Decode certificate
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > certificate.p12
+
+          # Create temporary keychain
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+
+          # Import certificate
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+          # Verify certificate
+          security find-identity -v -p codesigning
+
+      - name: Install Provisioning Profile
+        env:
+          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+        run: |
+          # Decode provisioning profile
+          echo "$APPLE_PROVISIONING_PROFILE" | base64 --decode > profile.mobileprovision
+
+          # Extract UUID from profile
+          PP_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(/usr/bin/security cms -D -i profile.mobileprovision))
+          echo "PROFILE_UUID=$PP_UUID" >> $GITHUB_ENV
+
+          # Install profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PP_UUID.mobileprovision
+
+          # Verify profile installation
+          echo "Installed provisioning profile: $PP_UUID"
+
+      - name: Build Archive
+        run: |
+          xcodebuild archive \
+            -scheme Dots \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath $PWD/build/Dots.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=9CD2CVAPU9 \
+            PROVISIONING_PROFILE="$PROFILE_UUID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            IPHONEOS_DEPLOYMENT_TARGET=18.0 \
+            TARGETED_DEVICE_FAMILY=1 \
+            SKIP_INSTALL=NO \
+            ONLY_ACTIVE_ARCH=NO
+
+      - name: Export IPA
+        run: |
+          # Create exportOptions.plist
+          cat > exportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>teamID</key>
+            <string>9CD2CVAPU9</string>
+            <key>uploadBitcode</key>
+            <false/>
+            <key>compileBitcode</key>
+            <false/>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>org.g7g.Dots</key>
+              <string>$PROFILE_UUID</string>
+            </dict>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+
+          # Export archive to IPA
+          xcodebuild -exportArchive \
+            -archivePath $PWD/build/Dots.xcarchive \
+            -exportOptionsPlist exportOptions.plist \
+            -exportPath $PWD/build
+
+      - name: Upload to TestFlight
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          # Decode App Store Connect API key
+          echo "$APP_STORE_CONNECT_API_KEY" | base64 --decode > AuthKey.p8
+
+          # Upload to TestFlight
+          xcrun altool --upload-app \
+            --type ios \
+            --file build/Dots.ipa \
+            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          if security list-keychains | grep -q "build.keychain"; then
+            security delete-keychain build.keychain
+          fi
