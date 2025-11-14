@@ -127,8 +127,9 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: |
-          # Decode App Store Connect API key
-          echo "$APP_STORE_CONNECT_API_KEY" | base64 --decode > AuthKey.p8
+          # Decode App Store Connect API key and place in expected location
+          mkdir -p ~/private_keys
+          echo "$APP_STORE_CONNECT_API_KEY" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
 
           # Upload to TestFlight
           xcrun altool --upload-app \
