@@ -69,6 +69,7 @@ jobs:
       - name: Build Archive
         run: |
           xcodebuild archive \
+            -project Dots/Dots.xcodeproj \
             -scheme Dots \
             -sdk iphoneos \
             -configuration Release \
