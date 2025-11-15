@@ -242,87 +242,89 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationView {
-                VStack(spacing: 0) {
-                    // Header with gradient background
-                    VStack(spacing: 16) {
-                        // App logo/icon area
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [Color.primaryApp, Color.accentApp]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
+                Form {
+                    // Header section
+                    Section {
+                        VStack(spacing: 16) {
+                            // App logo/icon area
+                            ZStack {
+                                Circle()
+                                    .fill(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [Color.primaryApp, Color.accentApp]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
                                     )
-                                )
-                                .frame(width: 80, height: 80)
-                                .shadow(color: Color.primaryApp.opacity(0.3), radius: 8, x: 0, y: 4)
+                                    .frame(width: 80, height: 80)
+                                    .shadow(color: Color.primaryApp.opacity(0.3), radius: 8, x: 0, y: 4)
 
-                            Image(systemName: "circle.grid.3x3.fill")
-                                .font(.system(size: 32, weight: .medium))
-                                .foregroundColor(.white)
+                                Image(systemName: "circle.grid.3x3.fill")
+                                    .font(.system(size: 32, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+
+                            Text("Daily Dots")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.textPrimary)
+
+                            Text("Track your daily progress")
+                                .font(.subheadline)
+                                .foregroundColor(.textSecondary)
+
+                            Text(vm.currentDay, style: .date)
+                                .font(.caption)
+                                .foregroundColor(.textSecondary)
+                                .padding(.top, 4)
                         }
-
-                        Text("Daily Dots")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.textPrimary)
-
-                        Text("Track your daily progress")
-                            .font(.subheadline)
-                            .foregroundColor(.textSecondary)
-
-                        Text(vm.currentDay, style: .date)
-                            .font(.caption)
-                            .foregroundColor(.textSecondary)
-                            .padding(.top, 4)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.vertical, 24)
-                    .background(
+                    .listRowBackground(
                         LinearGradient(
                             gradient: Gradient(colors: [Color.backgroundApp, Color.white]),
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
-
-                    Form {
-                        ForEach(vm.questions) { question in
-                            Section(header: Text(question.text)) {
-                                switch question.type {
-                                case .yesNo:
-                                    YesNoQuestionView(answer: Binding(
+                    
+                    ForEach(vm.questions) { question in
+                        Section(header: Text(question.text)) {
+                            switch question.type {
+                            case .yesNo:
+                                YesNoQuestionView(answer: Binding(
+                                    get: { vm.answers[question.id]?.yesNoValue },
+                                    set: { vm.setYesNo($0 ?? false, for: question) }
+                                ))
+                            case .slider:
+                                SliderQuestionView(answer: Binding(
+                                    get: { vm.answers[question.id]?.sliderValue },
+                                    set: { vm.answers[question.id]?.sliderValue = $0 }
+                                ))
+                            case .freeText:
+                                FreeTextQuestionView(
+                                    yesNo: Binding(
                                         get: { vm.answers[question.id]?.yesNoValue },
                                         set: { vm.setYesNo($0 ?? false, for: question) }
-                                    ))
-                                case .slider:
-                                    SliderQuestionView(answer: Binding(
-                                        get: { vm.answers[question.id]?.sliderValue },
-                                        set: { vm.answers[question.id]?.sliderValue = $0 }
-                                    ))
-                                case .freeText:
-                                    FreeTextQuestionView(
-                                        yesNo: Binding(
-                                            get: { vm.answers[question.id]?.yesNoValue },
-                                            set: { vm.setYesNo($0 ?? false, for: question) }
-                                        ),
-                                        answer: Binding(
-                                            get: { vm.answers[question.id]?.freeTextValue ?? "" },
-                                            set: { vm.setFreeText($0, for: question) }
-                                        )
+                                    ),
+                                    answer: Binding(
+                                        get: { vm.answers[question.id]?.freeTextValue ?? "" },
+                                        set: { vm.setFreeText($0, for: question) }
                                     )
-                                }
+                                )
                             }
                         }
-                        Button("Save") {
-                            vm.saveAnswers()
-                            showSaved = true
-                            selectedTab = 1 // Switch to Summary tab
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.primaryApp)
-                        .disabled(!vm.isComplete())
                     }
+                    
+                    Button("Save") {
+                        vm.saveAnswers()
+                        showSaved = true
+                        selectedTab = 1 // Switch to Summary tab
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.primaryApp)
+                    .disabled(!vm.isComplete())
                 }
                 .navigationTitle("Today's Questions")
                 .alert(isPresented: $showSaved) {
