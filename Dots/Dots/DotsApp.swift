@@ -14,18 +14,17 @@ struct DotsApp: App {
         WindowGroup {
             ContentView()
                 .onAppear {
-                    clearOutstandingNotifications()
+                    clearDeliveredNotifications()
                 }
         }
     }
     
-    private func clearOutstandingNotifications() {
+    private func clearDeliveredNotifications() {
         let center = UNUserNotificationCenter.current()
         
-        // Clear all pending notification requests
-        center.removeAllPendingNotificationRequests()
-        
-        // Clear all delivered notifications from notification center
+        // Clear only delivered notifications from notification center
+        // This removes the badge and notifications that have already been shown
+        // but keeps the scheduled future notifications intact
         center.removeAllDeliveredNotifications()
     }
 }
