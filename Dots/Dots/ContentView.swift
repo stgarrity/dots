@@ -238,6 +238,7 @@ struct ContentView: View {
     @State private var showSaved = false
     @State private var selectedTab = 0
     @State private var lastDay: Date = Calendar.current.startOfDay(for: Date())
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -364,6 +365,11 @@ struct ContentView: View {
             if lastDay != newDay {
                 selectedTab = 0 // Show Questions tab on new day
                 lastDay = newDay
+            }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                vm.checkForDayChangeAndReload()
             }
         }
     }
