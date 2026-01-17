@@ -16,7 +16,7 @@ jobs:
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.4'
+          xcode-version: '26'
 
       - name: Generate Build Number
         id: build_number
