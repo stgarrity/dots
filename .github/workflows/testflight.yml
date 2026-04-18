@@ -1,3 +1,4 @@
+# Builds and uploads to TestFlight on push to master
 name: Deploy to TestFlight
 
 on:
