@@ -35,10 +35,11 @@ xcodebuild -project Dots/Dots.xcodeproj -scheme Dots -destination 'platform=iOS 
 
 ## Data Flow & State
 
-- **Today calculation**: `var today: Date { Calendar.current.startOfDay(for: Date()) }` (computed property to avoid stale dates)
+- **Today calculation**: `var today: Date { AppDate.effectiveDay() }` (computed property to avoid stale dates; entries before 6 a.m. count as the previous day)
 - **Answer validation**: Save button disabled until all questions answered
 - **Auto-navigation**: Switches to Summary tab after saving
 - **Question editing**: Clears today's answers when questions are modified
+- **Reminders**: A rolling 14-day window of individual (non-repeating) notifications is scheduled; the current effective day's reminder is skipped once the form is saved and complete
 
 ## Important Patterns
 

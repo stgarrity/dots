@@ -55,6 +55,24 @@ struct Answer: Identifiable, Codable {
     var freeTextValue: String?
 }
 
+// MARK: - Effective Day
+
+/// Computes the "effective day" for an entry. Entries made before 6 a.m. are
+/// counted toward the previous calendar day.
+enum AppDate {
+    /// Hour (24h) before which an entry counts as the previous day.
+    static let earlyCutoffHour = 6
+
+    static func effectiveDay(for date: Date = Date(), calendar: Calendar = .current) -> Date {
+        let startOfDay = calendar.startOfDay(for: date)
+        let hour = calendar.component(.hour, from: date)
+        if hour < earlyCutoffHour {
+            return calendar.date(byAdding: .day, value: -1, to: startOfDay) ?? startOfDay
+        }
+        return startOfDay
+    }
+}
+
 // MARK: - ViewModel
 
 class DailyQuestionsViewModel: ObservableObject {
@@ -64,9 +82,9 @@ class DailyQuestionsViewModel: ObservableObject {
         }
     }
     @Published var answers: [UUID: Answer] = [:] // keyed by questionID
-    @Published var currentDay: Date = Calendar.current.startOfDay(for: Date())
+    @Published var currentDay: Date = AppDate.effectiveDay()
 
-    private var lastLoadedDay: Date = Calendar.current.startOfDay(for: Date())
+    private var lastLoadedDay: Date = AppDate.effectiveDay()
 
     init() {
         loadQuestions()
@@ -74,7 +92,7 @@ class DailyQuestionsViewModel: ObservableObject {
     }
 
     var today: Date {
-        Calendar.current.startOfDay(for: Date())
+        AppDate.effectiveDay()
     }
 
     func checkForDayChangeAndReload() {
@@ -153,7 +171,25 @@ class DailyQuestionsViewModel: ObservableObject {
         return true
     }
 
-    // MARK: - Question Editing
+    /// Returns true only if a complete set of answers has been saved (persisted)
+    /// for the current effective day. Used to decide whether to suppress the reminder.
+    func isSavedAndComplete() -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: "answers_\(today)"),
+              let saved = try? JSONDecoder().decode([UUID: Answer].self, from: data) else {
+            return false
+        }
+        for q in questions {
+            switch q.type {
+            case .yesNo:
+                if saved[q.id]?.yesNoValue == nil { return false }
+            case .slider:
+                if saved[q.id]?.sliderValue == nil { return false }
+            case .freeText:
+                if saved[q.id]?.yesNoValue == nil { return false }
+            }
+        }
+        return true
+    }
     func addQuestion(text: String, type: QuestionType) {
         let newQ = Question(id: UUID(), text: text, type: type)
         questions.append(newQ)
@@ -213,21 +249,54 @@ class NotificationManager {
         }
     }
 
-    func scheduleDailyNotification() {
+    /// Identifiers for the rolling window of individually-scheduled reminders,
+    /// plus the legacy repeating-reminder identifier (for cleanup).
+    private static let reminderWindowDays = 14
+    private func reminderIdentifiers() -> [String] {
+        var ids = (0..<Self.reminderWindowDays).map { "dailyDotsReminder_\($0)" }
+        ids.append("dailyDotsReminder") // legacy repeating identifier
+        return ids
+    }
+
+    /// Schedules individual (non-repeating) reminders for the next `reminderWindowDays`.
+    /// When `currentDayComplete` is true, the reminder for the current effective day is
+    /// skipped so we don't nag after the form is already filled out.
+    func scheduleReminders(currentDayComplete: Bool) {
         let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: ["dailyDotsReminder"])
-        let notifDate = getNotificationTime()
-        let comps = Calendar.current.dateComponents([.hour, .minute], from: notifDate)
-        var dateComponents = DateComponents()
-        dateComponents.hour = comps.hour
-        dateComponents.minute = comps.minute
-        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
-        let content = UNMutableNotificationContent()
-        content.title = "Dots Reminder"
-        content.body = "Don't forget to answer your daily questions!"
-        content.sound = .default
-        let request = UNNotificationRequest(identifier: "dailyDotsReminder", content: content, trigger: trigger)
-        center.add(request)
+        center.removePendingNotificationRequests(withIdentifiers: reminderIdentifiers())
+
+        let calendar = Calendar.current
+        let timeComps = calendar.dateComponents([.hour, .minute], from: getNotificationTime())
+        guard let hour = timeComps.hour, let minute = timeComps.minute else { return }
+
+        let now = Date()
+        let currentEffectiveDay = AppDate.effectiveDay(for: now)
+        let startOfToday = calendar.startOfDay(for: now)
+
+        for offset in 0..<Self.reminderWindowDays {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: startOfToday) else { continue }
+            var fireComps = calendar.dateComponents([.year, .month, .day], from: day)
+            fireComps.hour = hour
+            fireComps.minute = minute
+            guard let fireDate = calendar.date(from: fireComps) else { continue }
+
+            // Skip times that have already passed.
+            if fireDate <= now { continue }
+
+            // Skip the current effective day's reminder if the form is already complete.
+            if currentDayComplete && AppDate.effectiveDay(for: fireDate) == currentEffectiveDay { continue }
+
+            let trigger = UNCalendarNotificationTrigger(
+                dateMatching: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate),
+                repeats: false
+            )
+            let content = UNMutableNotificationContent()
+            content.title = "Dots Reminder"
+            content.body = "Don't forget to answer your daily questions!"
+            content.sound = .default
+            let request = UNNotificationRequest(identifier: "dailyDotsReminder_\(offset)", content: content, trigger: trigger)
+            center.add(request)
+        }
     }
 }
 
@@ -237,7 +306,7 @@ struct ContentView: View {
     @StateObject private var vm = DailyQuestionsViewModel()
     @State private var showSaved = false
     @State private var selectedTab = 0
-    @State private var lastDay: Date = Calendar.current.startOfDay(for: Date())
+    @State private var lastDay: Date = AppDate.effectiveDay()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -322,6 +391,7 @@ struct ContentView: View {
                         vm.saveAnswers()
                         showSaved = true
                         selectedTab = 1 // Switch to Summary tab
+                        NotificationManager.shared.scheduleReminders(currentDayComplete: vm.isSavedAndComplete())
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.primaryApp)
@@ -352,7 +422,7 @@ struct ContentView: View {
         .background(Color.backgroundApp)
         .onAppear {
             NotificationManager.shared.requestAuthorization()
-            NotificationManager.shared.scheduleDailyNotification()
+            NotificationManager.shared.scheduleReminders(currentDayComplete: vm.isSavedAndComplete())
             vm.checkForDayChangeAndReload()
             if lastDay != vm.today {
                 selectedTab = 0 // Show Questions tab on new day
@@ -431,7 +501,7 @@ struct SummaryView: View {
         // Load answers for the selected range from UserDefaults
         var result: [Date: [UUID: Answer]] = [:]
         let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
+        let today = AppDate.effectiveDay()
         let dates: [Date]
         switch range {
         case .today:
@@ -723,7 +793,7 @@ struct QuestionsEditorView: View {
                         .datePickerStyle(.wheel)
                         .onChange(of: notificationTime) { newValue in
                             NotificationManager.shared.setNotificationTime(newValue)
-                            NotificationManager.shared.scheduleDailyNotification()
+                            NotificationManager.shared.scheduleReminders(currentDayComplete: vm.isSavedAndComplete())
                         }
                     }
                 }
