@@ -78,7 +78,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=9CD2CVAPU9 \
             PROVISIONING_PROFILE="$PROFILE_UUID" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGN_IDENTITY="iPhone Distribution" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             IPHONEOS_DEPLOYMENT_TARGET=18.0 \
             TARGETED_DEVICE_FAMILY=1 \
